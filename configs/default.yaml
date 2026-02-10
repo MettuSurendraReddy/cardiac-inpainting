@@ -1,0 +1,69 @@
+# Project paths
+paths:
+  data_dir: "data"
+  models_dir: "models"
+  outputs_dir: "outputs"
+  raw_data_dir: "data/raw"
+  processed_data_dir: "data/processed"
+  masks_dir: "data/masks"
+
+# Image settings
+image:
+  size: 512
+  channels: 1  # Grayscale
+
+# Model settings
+models:
+  base_inpainting_model: "runwayml/stable-diffusion-inpainting"
+  classifier_path: "models/classifier/dataset_a_classifier.pt"
+  chexmask_weights_dir: "models/CheXmask-Database/Weights"
+
+# LoRA settings
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - "to_q"
+    - "to_v"
+    - "to_k"
+    - "to_out.0"
+
+# Training settings
+training:
+  batch_size: 4
+  learning_rate: 0.0001
+  num_epochs: 100
+  warmup_steps: 500
+  gradient_accumulation_steps: 4
+  mixed_precision: true
+  save_every_epochs: 10
+  validate_every_epochs: 5
+  early_stopping_patience: 10
+  monitor_metric: "val_loss"
+
+# Inference settings
+inference:
+  num_inference_steps: 50
+  guidance_scale: 7.5
+  num_candidates: 5
+  max_attempts: 10
+
+# Validation thresholds
+validation:
+  min_ctr: 0.35
+  max_ctr: 0.50
+  min_healthy_confidence: 0.80
+
+# Prompts
+prompts:
+  generation: "chest xray, healthy normal heart, clear lungs, medical imaging, high quality"
+  negative: "enlarged heart, cardiomegaly, artifacts, blur, noise"
+
+# Device settings
+device:
+  cuda: true
+  device_id: 0
+
+# Random seed for reproducibility
+seed: 42

@@ -1,0 +1,96 @@
+# Training Configuration
+# Extends default.yaml with training-specific settings
+
+# Data settings
+data:
+  train_split: 0.8
+  val_split: 0.2
+  shuffle: true
+  num_workers: 4
+  pin_memory: true
+
+# Training hyperparameters
+training:
+  # Default tuned to fit common 8GB GPUs.
+  batch_size: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  num_epochs: 100
+  warmup_steps: 500
+  gradient_accumulation_steps: 4
+  max_grad_norm: 1.0
+
+  # Learning rate scheduler
+  scheduler:
+    type: "cosine"  # cosine, linear, constant
+    warmup_ratio: 0.1
+    min_lr_ratio: 0.1
+
+  # Mixed precision training
+  mixed_precision: true
+  
+  # Checkpointing
+  save_every_epochs: 10
+  validate_every_epochs: 5
+  keep_last_n_checkpoints: 3
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 10
+    monitor: "val_loss"
+    mode: "min"  # min or max
+    min_delta: 0.001
+
+# LoRA fine-tuning settings
+lora:
+  enabled: true
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  bias: "none"
+  target_modules:
+    - "to_q"
+    - "to_v"
+    - "to_k"
+    - "to_out.0"
+
+# Augmentation settings
+augmentation:
+  enabled: true
+  rotation_limit: 5  # degrees
+  brightness_limit: 0.1
+  contrast_limit: 0.1
+  scale_limit: 0.1  # 0.9x to 1.1x
+  
+  # Disabled augmentations (anatomically incorrect)
+  horizontal_flip: false
+  vertical_flip: false
+
+# Diffusion settings
+diffusion:
+  num_train_timesteps: 1000
+  beta_schedule: "scaled_linear"
+  prediction_type: "epsilon"
+
+# Logging
+logging:
+  log_every_steps: 100
+  log_images_every_epochs: 5
+  num_sample_images: 4
+  
+  # Weights & Biases
+  wandb:
+    enabled: false
+    project: "cardiac-inpainting"
+    entity: null
+    tags:
+      - "inpainting"
+      - "medical-imaging"
+      - "lora"
+
+# Output paths
+output:
+  checkpoint_dir: "models/inpainting"
+  log_dir: "outputs/logs"
+  sample_dir: "outputs/training_samples"

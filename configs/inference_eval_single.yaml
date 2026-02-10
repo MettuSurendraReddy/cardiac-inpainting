@@ -1,0 +1,50 @@
+# Inference config optimized for generating a single evaluation picture quickly.
+# Same model paths as inference.yaml, but fewer diffusion steps/candidates.
+
+models:
+  base_inpainting_model: "runwayml/stable-diffusion-inpainting"
+  lora_weights_path: "models/inpainting/best_model"
+  classifier_path: "models/classifier/cardio_classifier_resnet18.pt"
+  chexmask_weights_dir: "models/CheXmask-Database/Weights"
+
+image:
+  size: 512
+  channels: 1
+
+inference:
+  num_inference_steps: 25
+  guidance_scale: 7.5
+  num_candidates: 1
+  max_attempts: 2
+  batch_size: 1
+  use_seed: true
+  seed: 42
+
+mask:
+  dilation_factor: 0.1
+  feather_radius: 5
+  min_mask_ratio: 0.05
+  max_mask_ratio: 0.30
+
+validation:
+  min_ctr: 0.35
+  max_ctr: 0.50
+  min_healthy_confidence: 0.80
+  require_classifier_validation: true
+  require_anatomical_validation: true
+
+prompts:
+  generation: "chest xray, healthy normal heart, clear lungs, medical imaging, high quality"
+  negative: "enlarged heart, cardiomegaly, artifacts, blur, noise"
+
+output:
+  save_intermediate: false
+  save_comparison: true
+  output_format: "png"
+  output_dir: "outputs/generated"
+  comparison_dir: "outputs/comparisons"
+
+device:
+  cuda: true
+  device_id: 0
+  use_half_precision: true

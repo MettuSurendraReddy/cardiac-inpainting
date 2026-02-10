@@ -1,0 +1,73 @@
+# Inference Configuration
+# Settings for running the cardiomegaly to healthy pipeline
+
+# Model paths
+models:
+  base_inpainting_model: "runwayml/stable-diffusion-inpainting"
+  lora_weights_path: "models/inpainting/best_model"
+  classifier_path: "models/classifier/dataset_a_classifier.pt"
+  chexmask_weights_dir: "models/CheXmask-Database/Weights"
+
+# Image settings
+image:
+  size: 512
+  channels: 1
+
+# Inference settings
+inference:
+  # Diffusion sampling
+  num_inference_steps: 50
+  guidance_scale: 7.5
+  
+  # Candidate generation
+  num_candidates: 5
+  max_attempts: 10
+  
+  # Batch processing
+  batch_size: 1
+  
+  # Deterministic generation (for reproducibility)
+  use_seed: true
+  seed: 42
+
+# Mask preprocessing
+mask:
+  dilation_factor: 0.1  # Relative to mask size
+  feather_radius: 5     # Pixels for edge smoothing
+  min_mask_ratio: 0.05  # Minimum heart-to-image ratio
+  max_mask_ratio: 0.30  # Maximum heart-to-image ratio
+
+# Validation thresholds
+validation:
+  min_ctr: 0.35
+  max_ctr: 0.50
+  min_healthy_confidence: 0.80
+  require_classifier_validation: true
+  require_anatomical_validation: true
+
+# Prompts
+prompts:
+  generation: "chest xray, healthy normal heart, clear lungs, medical imaging, high quality"
+  negative: "enlarged heart, cardiomegaly, artifacts, blur, noise"
+
+# Output settings
+output:
+  save_intermediate: false    # Save mask, candidates, etc.
+  save_comparison: true       # Side-by-side original vs generated
+  output_format: "png"
+  jpeg_quality: 95           # If using JPEG
+  
+  # Paths
+  output_dir: "outputs/generated"
+  comparison_dir: "outputs/comparisons"
+
+# Device settings
+device:
+  cuda: true
+  device_id: 0
+  use_half_precision: true   # FP16 for faster inference
+
+# Logging
+logging:
+  verbose: true
+  log_file: "outputs/logs/inference.log"
