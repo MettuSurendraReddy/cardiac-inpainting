@@ -12,7 +12,7 @@ This project implements a **counterfactual medical image generation** system tha
 
 1. **Segmenter**: CheXMask HybridGNet for cardiac and lung segmentation
 2. **Inpainter**: Stable Diffusion Inpainting model fine-tuned with LoRA on healthy chest X-rays
-3. **Classifier**: DenseNet121 binary classifier (Cardiomegaly vs Healthy)
+3. **Classifier**: Binary classifier (healthy vs cardiomegaly) - supports multiple architectures (ResNet, DenseNet, EfficientNet)
 4. **Validator**: Anatomical validation using Cardiothoracic Ratio (CTR) measurements
 
 ```
@@ -59,7 +59,7 @@ The inpainting model is trained **exclusively on healthy chest X-rays** with dil
 
 1. Take a healthy chest X-ray
 2. Generate the heart mask using CheXMask segmentation
-3. Dilate the mask to simulate a larger (cardiomegaly-sized) region
+3. **Dilate the mask by 30-80%** to simulate a larger (cardiomegaly-sized) region
 4. Train the model to reconstruct the original healthy heart within this enlarged mask
 
 This approach teaches the model to fill oversized masks with correctly-sized healthy hearts, without requiring paired cardiomegaly-to-healthy data.
@@ -70,15 +70,11 @@ This project uses the [NIH ChestX-ray14 Dataset](https://nihcc.app.box.com/v/Che
 
 ### Dataset Filtering
 
-From the full NIH dataset (112,120 images), we filtered:
+From the full NIH dataset, we filter:
 
-| Stage | Count | Notes |
-|-------|-------|-------|
-| Total NIH images | 112,120 | Full ChestX-ray14 dataset |
-| After PA view filter | ~67,000 | Removed lateral/AP views |
-| Cardiomegaly labeled | ~2,772 | Images with "Cardiomegaly" finding |
-| No Finding (healthy) | ~60,361 | Images labeled "No Finding" |
-| Final balanced set | 1,252 | 626 per class |
+- **View Position**: Only PA (Posteroanterior) X-rays
+- **Labels**: Only "No Finding" (healthy) and "Cardiomegaly"
+- **One image per patient** to reduce data leakage
 
 ### Data Split
 
@@ -86,7 +82,7 @@ From the full NIH dataset (112,120 images), we filtered:
 |-------|--------|---------|
 | Training | 500 (healthy only) | Train inpainting model |
 | Validation | 126 (healthy only) | Monitor training |
-| Test | 626 (cardiomegaly) | Evaluate transformation |
+| Test | Cardiomegaly images | Evaluate transformation |
 
 ## Model Configuration
 
@@ -104,19 +100,44 @@ lora:
     - "to_out.0"
 ```
 
+### Training Configuration
+
+```yaml
+training:
+  batch_size: 1          # Default for 8GB GPUs
+  learning_rate: 0.0001
+  num_epochs: 100
+  gradient_accumulation_steps: 4
+  mixed_precision: true
+  warmup_steps: 500
+```
+
 ### Validation Thresholds
 
 ```yaml
 validation:
-  min_ctr: 0.35
-  max_ctr: 0.50
+  min_ctr: 0.35          # Below = unrealistically small heart
+  max_ctr: 0.50          # Above = still cardiomegaly
   min_healthy_confidence: 0.80
+```
+
+### Inference Settings
+
+```yaml
+inference:
+  num_inference_steps: 50
+  guidance_scale: 7.5
+  num_candidates: 5      # Generate multiple, pick best
+  max_attempts: 10
 ```
 
 ## Project Structure
 
 ```
 cardiac-inpainting/
+├── api/                        # Flask API
+│   ├── app.py
+│   └── README.md
 ├── configs/
 │   ├── default.yaml
 │   ├── training.yaml
@@ -128,22 +149,41 @@ cardiac-inpainting/
 │   ├── masks/
 │   └── processed/
 ├── models/
-│   ├── CheXmask-Database/
+│   ├── CheXmask-Database/      # Segmentation model
 │   ├── classifier/
-│   └── inpainting/
+│   └── inpainting/             # LoRA checkpoints
 ├── outputs/
 ├── scripts/
-│   ├── prepare_data.py
-│   ├── generate_masks.py
-│   ├── train.py
+│   ├── calibrate_classifier_temperature.py
+│   ├── compare_checkpoints.py
 │   ├── evaluate.py
-│   └── inference.py
+│   ├── export_nih_dataset_a_to_data_raw.py
+│   ├── generate_masks.py
+│   ├── inference.py
+│   ├── make_evaluation_pictures.py
+│   ├── prepare_data.py
+│   ├── test_inference.py
+│   ├── train.py
+│   └── train_dataset_a_classifier.py
 ├── src/
+│   ├── config.py
 │   ├── data/
-│   ├── models/
-│   ├── training/
+│   │   ├── augmentation.py
+│   │   ├── dataset.py
+│   │   └── preparation.py
 │   ├── inference/
+│   │   ├── batch_processor.py
+│   │   └── pipeline.py
+│   ├── models/
+│   │   ├── classifier.py
+│   │   ├── inpainter.py
+│   │   └── segmenter.py
+│   ├── training/
+│   │   ├── losses.py
+│   │   └── trainer.py
 │   └── validation/
+│       ├── anatomical.py
+│       └── metrics.py
 ├── requirements.txt
 └── README.md
 ```
@@ -174,27 +214,41 @@ pip install -e .
 
 1. **Download NIH ChestX-ray14 Dataset** from [NIH website](https://nihcc.app.box.com/v/ChestXray-NIHCC)
 
-2. **Filter the dataset**
+2. **Export Dataset A** (PA-only, balanced classes)
    ```bash
-   python scripts/prepare_data.py \
-       --source-dir /path/to/nih-chest-xrays \
-       --output-dir data/raw \
-       --view-position PA \
-       --conditions "No Finding" "Cardiomegaly"
+   python scripts/export_nih_dataset_a_to_data_raw.py \
+       --data-entry-csv content/Data_Entry_2017.csv \
+       --images-root content \
+       --out-root data
    ```
 
 3. **Generate heart masks**
    ```bash
    python scripts/generate_masks.py \
        --input-dir data/raw \
-       --output-dir data/masks
+       --output-dir data/masks \
+       --category healthy
+   ```
+
+4. **Prepare training data**
+   ```bash
+   python scripts/prepare_data.py \
+       --images-dir data/raw/healthy \
+       --masks-dir data/masks/healthy \
+       --output-dir data/processed
    ```
 
 ### Model Setup
 
 1. **CheXMask**: Download from [PhysioNet](https://physionet.org/content/chexmask-cxr-segmentation-data/0.4/) and place in `models/CheXmask-Database/`
 
-2. **Classifier**: Place trained DenseNet121 weights in `models/classifier/dataset_a_classifier.pt`
+2. **Train classifier** (optional, for validation)
+   ```bash
+   python scripts/train_dataset_a_classifier.py \
+       --device cuda \
+       --epochs 30 \
+       --model resnet50
+   ```
 
 3. **Stable Diffusion**: Downloaded automatically from HuggingFace on first run
 
@@ -207,6 +261,8 @@ python scripts/train.py \
     --output-dir models/inpainting \
     --epochs 100
 ```
+
+Training automatically resumes from the latest checkpoint if interrupted.
 
 ### Inference
 
@@ -227,9 +283,16 @@ python scripts/inference.py \
     --save-comparison
 ```
 
+**Compare checkpoints across epochs:**
+```bash
+python scripts/compare_checkpoints.py \
+    --image data/raw/cardiomegaly/example.png \
+    --epochs 40,50,60,70,80
+```
+
 ### Classifier Calibration (Recommended)
 
-The classifier supports temperature scaling for better calibrated confidence scores:
+Neural network softmax scores are often overconfident. Use temperature scaling:
 
 ```bash
 python scripts/calibrate_classifier_temperature.py --device cuda
@@ -237,9 +300,32 @@ python scripts/calibrate_classifier_temperature.py --device cuda
 
 The calibration is saved to `outputs/classifier/dataset_a_calibration.json` and loaded automatically during inference.
 
+### Generate Evaluation Pictures
+
+```bash
+python scripts/make_evaluation_pictures.py \
+    --input-dir data/raw/cardiomegaly \
+    --checkpoint models/inpainting/final_model \
+    --best-num 4 --worst-num 4 --random-num 4 \
+    --output-dir Evaluation_pictures
+```
+
+### API Server
+
+```bash
+cd api
+python app.py
+```
+
+Endpoints:
+- `GET /health` - Health check
+- `GET /checkpoints` - List available checkpoints
+- `POST /inpaint` - Inpaint a single image
+- `POST /evaluate` - Evaluate across multiple epochs
+
 ## Results
 
-Evaluation on 249 cardiomegaly test images:
+Evaluation on cardiomegaly test images:
 
 | Metric | Value |
 |--------|-------|
@@ -254,7 +340,8 @@ Evaluation on 249 cardiomegaly test images:
 - This is a research project, not a clinical tool
 - Success rate drops for severe cardiomegaly (CTR > 0.60)
 - Models trained for too many epochs may produce artifacts (dark lines across heart region)
-- 25% of images fail validation and cannot be transformed
+- Best results typically from checkpoints around epoch 40-50, not later epochs
+- ~25% of images fail validation and cannot be transformed
 
 ## License
 
